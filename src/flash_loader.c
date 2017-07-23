@@ -219,7 +219,7 @@ int stlink_flash_loader_init(stlink_t *sl, flash_loader_t *fl)
 	return 0;
 }
 
-static int loader_v_dependent_assignment(stlink_t *sl, 
+static int loader_v_dependent_assignment(stlink_t *sl,
                                          const uint8_t **loader_code, size_t *loader_size,
                                          const uint8_t *high_v_loader, size_t high_v_loader_size,
                                          const uint8_t *low_v_loader, size_t low_v_loader_size)
@@ -236,7 +236,7 @@ static int loader_v_dependent_assignment(stlink_t *sl,
         if (voltage == -1) {
             retval = -1;
             printf("Failed to read Target voltage\n");
-        } 
+        }
         else {
             if (voltage > 2700) {
                 *loader_code = high_v_loader;
@@ -385,6 +385,45 @@ int stlink_flash_loader_run(stlink_t *sl, flash_loader_t* fl, stm32_addr_t targe
     stlink_read_reg(sl, 2, &rr);
     if (rr.r[2] != 0) {
         ELOG("write error, count == %u\n", rr.r[2]);
+        return -1;
+    }
+
+    return 0;
+}
+
+static const uint8_t loader_code_stm32f0_write_opt[] = {
+	0x00, 0x30, //     nop     /* add r0,#0 */
+	0x00, 0x30, //     nop     /* add r0,#0 */
+
+	// write_half_word:
+	0x0B, 0x80, //     strh    r3, [r1]          /*  *flash = r3 */
+	// exit:
+	0x00, 0xBE, //     bkpt	#0x00
+};
+int stlink_flash_loader_run_write_opt(stlink_t *sl, uint32_t addr, uint16_t value)
+{
+    int i = 0;
+    memcpy(sl->q_buf, loader_code_stm32f0_write_opt, sizeof(loader_code_stm32f0_write_opt));
+    stlink_write_mem32(sl, sl->sram_base, sizeof(loader_code_stm32f0_write_opt));
+
+    /* setup core */
+    stlink_write_reg(sl, addr, 1); /* target */
+    stlink_write_reg(sl, value, 3); /* flash register base, only used on VL/F1_XL, but harmless for others */
+    stlink_write_reg(sl, sl->sram_base, 15); /* pc register */
+
+    /* run loader */
+    stlink_run(sl);
+
+#define WAIT_ROUNDS 10000
+    /* wait until done (reaches breakpoint) */
+    for (i = 0; i < WAIT_ROUNDS; i++) {
+        usleep(10);
+        if (stlink_is_core_halted(sl))
+            break;
+    }
+
+    if (i >= WAIT_ROUNDS) {
+        ELOG("flash loader run error\n");
         return -1;
     }
 

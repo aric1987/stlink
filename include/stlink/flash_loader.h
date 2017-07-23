@@ -20,6 +20,7 @@ int stlink_flash_loader_init(stlink_t *sl, flash_loader_t* fl);
 int stlink_flash_loader_write_to_sram(stlink_t *sl, stm32_addr_t* addr, size_t* size);
 int stlink_flash_loader_run(stlink_t *sl, flash_loader_t* fl, stm32_addr_t target, const uint8_t* buf, size_t size);
 
+int stlink_flash_loader_run_write_opt(stlink_t *sl, uint32_t addr, uint16_t value);
 #ifdef __cplusplus
 }
 #endif
