@@ -34,6 +34,8 @@ static void usage(void)
     puts("stlinkv2 command line: ./st-flash [--debug] [--reset] [--serial <serial>] [--format <format>] [--flash=<fsize>] {read|write} <path> <addr> <size>");
     puts("stlinkv2 command line: ./st-flash [--debug] [--serial <serial>] erase");
     puts("stlinkv2 command line: ./st-flash [--debug] [--serial <serial>] reset");
+    puts("stlinkv2 command line: ./st-flash [--debug] [--serial <serial>] lock");
+    puts("stlinkv2 command line: ./st-flash [--debug] [--serial <serial>] unlock");
     puts("                       Use hex format for addr, <serial> and <size>.");
     puts("                       fsize: Use decimal, octal or hex by prefix 0xXXX for hex, optionally followed by k=KB, or m=MB (eg. --flash=128k)");
     puts("                       Format may be 'binary' (default) or 'ihex', although <addr> must be specified for binary format only.");
@@ -167,6 +169,22 @@ int main(int ac, char** av)
             printf("Unknown memory region\n");
             goto on_error;
         }
+    } else if (o.cmd == FLASH_CMD_LOCK)
+    {
+		err = stlink_set_read_protection(sl, true);
+		if(err != 0)
+		{
+			printf("stlink_set_read_protection(true) != 0\n");
+            goto on_error;
+		}
+    } else if (o.cmd == FLASH_CMD_UNLOCK)
+    {
+		err = stlink_set_read_protection(sl, false);
+		if(err != 0)
+		{
+			printf("stlink_set_read_protection(false) != 0\n");
+            goto on_error;
+		}
     } else if (o.cmd == FLASH_CMD_ERASE)
     {
         err = stlink_erase_flash_mass(sl);

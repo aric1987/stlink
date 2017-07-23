@@ -32,6 +32,7 @@
 
 #define FLASH_ACR (FLASH_REGS_ADDR + 0x00)
 #define FLASH_KEYR (FLASH_REGS_ADDR + 0x04)
+#define FLASH_OPTKEYR (FLASH_REGS_ADDR + 0x08)
 #define FLASH_SR (FLASH_REGS_ADDR + 0x0c)
 #define FLASH_CR (FLASH_REGS_ADDR + 0x10)
 #define FLASH_AR (FLASH_REGS_ADDR + 0x14)
@@ -51,13 +52,18 @@
 #define FLASH_KEY2 0xcdef89ab
 
 #define FLASH_SR_BSY 0
+#define FLASH_SR_PGERR 2
+#define FLASH_SR_WRPRTERR 4
 #define FLASH_SR_EOP 5
 
 #define FLASH_CR_PG 0
 #define FLASH_CR_PER 1
 #define FLASH_CR_MER 2
+#define FLASH_CR_OPTPG 4
+#define FLASH_CR_OPTER 5
 #define FLASH_CR_STRT 6
 #define FLASH_CR_LOCK 7
+#define FLASH_CR_OPTWER 9
 
 
 //32L = 32F1 same CoreID as 32F4!
@@ -788,13 +794,16 @@ int stlink_read_debug32(stlink_t *sl, uint32_t addr, uint32_t *data) {
     ret = sl->backend->read_debug32(sl, addr, data);
     if (!ret)
 	    DLOG("*** stlink_read_debug32 %x is %#x\n", *data, addr);
-
+	printf("read %08X@%08X, ret: %d\n", *data, addr, ret);
 	return ret;
 }
 
 int stlink_write_debug32(stlink_t *sl, uint32_t addr, uint32_t data) {
     DLOG("*** stlink_write_debug32 %x to %#x\n", data, addr);
-    return sl->backend->write_debug32(sl, addr, data);
+    int ret = sl->backend->write_debug32(sl, addr, data);
+
+	printf("write %08X@%08X, ret: %d\n", data, addr, ret);
+	return ret;
 }
 
 int stlink_write_mem32(stlink_t *sl, uint32_t addr, uint16_t len) {
@@ -2253,4 +2262,110 @@ int stlink_fwrite_flash(stlink_t *sl, const char* path, stm32_addr_t addr) {
     stlink_fwrite_finalize(sl, addr);
     unmap_file(&mf);
     return err;
+}
+
+static bool stlink_wait_for_last_operation(stlink_t *sl)
+{
+	uint32_t status;
+	uint32_t cnt=0;
+	printf("stlink_wait_for_last_operation.\n");
+	while((status=read_flash_sr(sl))&(0x01<<FLASH_SR_BSY))
+	{
+		if(++cnt > 10000)
+		{
+			printf("stlink_wait_for_last_operation timeout.\n");
+			return false;
+		}
+		usleep(100);
+	}
+	if(status&((0x01<<FLASH_SR_PGERR)|(0x01<<FLASH_SR_WRPRTERR)))
+	{
+		printf("stlink_wait_for_last_operation status: %08X.\n", status);
+		return false;
+	}
+
+	return true;
+}
+int stlink_set_read_protection(stlink_t *sl, bool enabled)
+{
+	if(!stlink_wait_for_last_operation(sl))
+	{
+		printf("failed to stlink_wait_for_last_operation1\n");
+		return -1;
+	}
+	clear_flash_sr_eop(sl);
+	if ((sl->flash_type == STLINK_FLASH_TYPE_F0) || (sl->flash_type == STLINK_FLASH_TYPE_F1_XL)) {
+        ILOG("Starting Flash write for VL/F0/F3/F1_XL core id\n");
+        /* flash loader initialization */
+		//~ flash_loader_t fl;
+        //~ if (stlink_flash_loader_init(sl, &fl) == -1) {
+            //~ ELOG("stlink_flash_loader_init() == -1\n");
+            //~ return -1;
+        //~ }
+
+		/* unlock and set programming mode */
+		unlock_flash_if(sl);
+		if (sl->flash_type != STLINK_FLASH_TYPE_F1_XL) {
+			set_flash_cr_pg(sl);
+		}
+		uint32_t value;
+		printf("start opt ctrl!\n");
+		stlink_write_debug32(sl, FLASH_OPTKEYR, FLASH_KEY1);
+		stlink_write_debug32(sl, FLASH_OPTKEYR, FLASH_KEY2);
+		//~ stlink_read_debug32(sl, FLASH_CR, &value);
+		//~ stlink_write_debug32(sl, FLASH_CR, value|(0x01<<FLASH_CR_OPTWER));
+		stlink_read_debug32(sl, FLASH_CR, &value);
+		stlink_write_debug32(sl, FLASH_CR, value&(~(0x01<<FLASH_CR_PG)));
+		stlink_read_debug32(sl, FLASH_CR, &value);
+		stlink_write_debug32(sl, FLASH_CR, value|(0x01<<FLASH_CR_OPTER));
+		stlink_read_debug32(sl, FLASH_CR, &value);
+		stlink_write_debug32(sl, FLASH_CR, value|(0x01<<FLASH_CR_STRT));
+		if(!stlink_wait_for_last_operation(sl))
+		{
+			printf("failed to stlink_wait_for_last_operation2\n");
+			return -1;
+		}
+		clear_flash_sr_eop(sl);
+		stlink_read_debug32(sl, FLASH_CR, &value);
+		stlink_write_debug32(sl, FLASH_CR, value&(~(0x01<<FLASH_CR_OPTER)));
+		stlink_read_debug32(sl, FLASH_CR, &value);
+		stlink_write_debug32(sl, FLASH_CR, value|(0x01<<FLASH_CR_OPTPG));
+		if(!stlink_wait_for_last_operation(sl))
+		{
+			printf("failed to stlink_wait_for_last_operation3\n");
+			return -1;
+		}
+		clear_flash_sr_eop(sl);
+		value = 0;
+		stlink_read_debug32(sl, 0x1FFFF800, &value);
+		if(enabled)
+		{
+			value = 0x0000;
+			printf("start lock flash protection!\n");
+		}
+		else
+		{
+			value = 0x00A5;
+			printf("start unlock flash protection!\n");
+		}
+		//~ if (stlink_flash_loader_run(sl, &fl, 0x1FFFF800, (const uint8_t*)&value, 2) == -1) {
+			//~ ELOG("stlink_flash_loader_run(%#zx) failed! == -1\n", 0x1FFFF800);
+			//~ return -1;
+		//~ }
+
+		//~ stlink_write_debug32(sl, 0x1FFFF800, value);
+		//~ stlink_read_debug32(sl, 0x1FFFF800, &value);
+		sl->q_buf[0] = value;
+		sl->q_buf[1] = value>>8;
+		stlink_write_mem8(sl, 0x1FFFF800, 1);
+		sl->q_buf[0] = 0xFF;
+		sl->q_buf[1] = 0x00;
+		//~ stlink_write_mem8(sl, 0x1FFFF802, 2);
+		stlink_wait_for_last_operation(sl);
+		stlink_read_debug32(sl, FLASH_CR, &value);
+		stlink_write_debug32(sl, FLASH_CR, value&(~(0x01<<FLASH_CR_OPTPG)));
+		lock_flash(sl);
+	}
+
+	return 0;
 }

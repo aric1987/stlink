@@ -7,7 +7,16 @@
 #define DEBUG_LOG_LEVEL 100
 #define STND_LOG_LEVEL  50
 
-enum flash_cmd {FLASH_CMD_NONE = 0, FLASH_CMD_WRITE = 1, FLASH_CMD_READ = 2, FLASH_CMD_ERASE = 3, CMD_RESET = 4};
+enum flash_cmd
+{
+	FLASH_CMD_NONE = 0,
+	FLASH_CMD_WRITE = 1,
+	FLASH_CMD_READ = 2,
+	FLASH_CMD_ERASE = 3,
+	CMD_RESET = 4,
+	FLASH_CMD_LOCK = 5,
+	FLASH_CMD_UNLOCK = 6,
+};
 enum flash_format {FLASH_FORMAT_BINARY = 0, FLASH_FORMAT_IHEX = 1};
 struct flash_opts
 {
@@ -28,4 +37,3 @@ struct flash_opts
 int flash_get_opts(struct flash_opts* o, int ac, char** av);
 
 #endif // STLINK_FLASH_H_
-

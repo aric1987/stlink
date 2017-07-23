@@ -49,7 +49,7 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av)
             int j = (int)strlen(serial);
             int length = j / 2;  //the length of the destination-array
             if(j % 2 != 0) return -1;
- 
+
             for(size_t k = 0; j >= 0 && k < sizeof(o->serial); ++k, j -= 2) {
                 char buffer[3] = {0};
                 memcpy(buffer, serial + j, 2);
@@ -127,6 +127,14 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av)
             if (o->cmd != FLASH_CMD_NONE) return -1;
             o->cmd = CMD_RESET;
         }
+        else if (strcmp(av[0], "lock") == 0) {
+            if (o->cmd != FLASH_CMD_NONE) return -1;
+            o->cmd = FLASH_CMD_LOCK;
+        }
+        else if (strcmp(av[0], "unlock") == 0) {
+            if (o->cmd != FLASH_CMD_NONE) return -1;
+            o->cmd = FLASH_CMD_UNLOCK;
+        }
         else if(starts_with(av[0], "/dev/")) {
             if (o->devname) return -1;
             o->devname = av[0];
@@ -182,9 +190,8 @@ int flash_get_opts(struct flash_opts* o, int ac, char** av)
     }
 
     // some constistence checks
-    
+
     if(serial_specified && o->devname != NULL) return -1; // serial not supported for v1
 
     return 0;
 }
-
